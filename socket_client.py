@@ -36,10 +36,6 @@ class Client():
         def disconnect():
             print('disconnected from server')
 
-    def run(self):
-        self.setup()
-        self.loop()
-
 
 if __name__ == '__main__':
     print("socket.io client class")

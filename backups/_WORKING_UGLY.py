@@ -1,3 +1,5 @@
+# WORKING
+
 import time
 from dronekit import connect, VehicleMode, LocationGlobalRelative, LocationGlobal
 from dronekit_sitl import SITL
@@ -8,9 +10,9 @@ from geopy.distance import geodesic
 class FlightController():
 
     def __init__(self):
-        self.state = 'init'
+        self.state = 'idle'
         self.sitl = SITL()
-        self.sitl.download('copter', '3.3', verbose=False)
+        self.sitl.download('copter', '3.3', verbose=True)
         sitl_args = ['-I0', '--model', 'quad',
                      f'--home={constants.HOME_LAT},{constants.HOME_LNG},0,180']
         self.sitl.launch(sitl_args, await_ready=True, restart=True)
@@ -32,8 +34,7 @@ class FlightController():
         while not self.vehicle.is_armable:
             time.sleep(1)
         print("Vehicle initialized.")
-        self.sio_emit("status", {"status": "stop"})
-        self.change_state("idle")
+        self.sio_emit("status", {"status": "stop", "id": constants.ID})
 
     def arm(self):
         self.vehicle.mode = VehicleMode("GUIDED")
@@ -44,21 +45,18 @@ class FlightController():
         print("Vehicle Armed.")
 
     def deliver(self, payload):
-        self.go_to_helper(payload, "transit-to")
-
-    def change_state(self, state, emit=True):
-        self.state = state
-        print(f"[[STATE CHANGED]]-->{state}")
-        if emit:
-            self.sio_emit("state", {"state": self.state})
+        self.go_to_helper(payload, 'transit-to')
 
     def go_to_helper(self, payload, state):
         self.destination = (payload['lat'], payload['lon'])
-        self.change_state(state)
+        self.state = state
+        self.sio_emit(
+            'state', {"state": self.state, "id": constants.ID})
         self.arm()
         print("going to: ")
         print(payload)
-        self.sio_emit("status", {"status": "take-off"})
+        print(f"state is: {state}")
+        self.sio_emit("status", {"status": "take-off", "id": constants.ID})
         self.vehicle.simple_takeoff(constants.MAX_ALTITUDE)
         print("Taking off!")
         print(self.vehicle.location.global_relative_frame.alt)
@@ -66,7 +64,7 @@ class FlightController():
             time.sleep(1)
 
         print("MAX_ALTITUDE reached, flying to coordinates...")
-        self.sio_emit("status", {"status": "flying"})
+        self.sio_emit("status", {"status": "flying", "id": constants.ID})
         self.vehicle.airspeed = constants.AIR_SPEED
         go_to = LocationGlobalRelative(
             payload['lat'], payload['lon'], constants.MAX_ALTITUDE)
@@ -85,31 +83,40 @@ class FlightController():
 
         if self.state == 'transit-to':
             self.sio_emit(
-                'gps', {"lat": self.current_location.lat, "lng": self.current_location.lon})
+                'gps', {"lat": self.current_location.lat, "lng": self.current_location.lon, "id": constants.ID})
 
             if distance < 2:
                 vehicle.mode = VehicleMode("LAND")
-                print('landing at user-destination...')
-                self.sio_emit("status", {"status": "landing"})
-                time.sleep(25)
-                self.sio_emit("status", {"status": "stop"})
+                print('landing...')
+                self.sio_emit(
+                    "status", {"status": "landing", "id": constants.ID})
+                time.sleep(20)
                 print('Landing sucessfull, disarming vehicle..')
+                # self.sio_emit('state', 'transit-deliverd')
                 self.vehicle.armed = False
-                self.change_state('transit-await')
+                self.sio_emit("status", {"status": "stop", "id": constants.ID})
+                self.state = 'transit-await'
+                self.sio_emit(
+                    'state', {"state": self.state, "id": constants.ID})
 
                 time.sleep(5)
-                print("Waiting for pickup...")
-                self.change_state('transit-delivered')
+
+                self.state = 'transit-delivered'
+                self.sio_emit(
+                    'state', {"state": self.state, "id": constants.ID})
+
                 print('Delivered go back home..')
                 self.go_to_helper(
                     {'lat': constants.HOME_LAT, 'lon': constants.HOME_LNG}, 'transit-back')
         elif self.state == 'transit-back':
             if distance < 2:
                 vehicle.mode = VehicleMode("LAND")
-                print('Landing at home...')
-                time.sleep(20)
+                print('landing...')
+                time.sleep(10)
                 print('Landing sucessfull, disarming vehicle..')
-                self.change_state('idle')
+                self.state = 'idle'
+                self.sio_emit(
+                    'state', {"state": self.state, "id": constants.ID})
 
     def shutdown(self):
         self.vehicle.close()
