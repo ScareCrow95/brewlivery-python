@@ -1,0 +1,5 @@
+MAX_ALTITUDE = 20
+AIR_SPEED = 20
+HOME_LAT = 38.4481179
+HOME_LNG = -78.8721451
+ID = 'flying_dutchman'
